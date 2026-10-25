@@ -1,33 +1,63 @@
 import asyncio
+import os
+from pathlib import Path
+
 from .agents import RESEARCHER, CODER, REVIEWER
-from .tasks import PIPELINE
+from .ollama_client import OLLAMA_MODEL
 
-AGENTS = {'Researcher': RESEARCHER, 'Coder': CODER, 'Reviewer': REVIEWER}
+DEFAULT_TASK = 'Briefly describe 3 approaches to caching in Python.'
 
-async def pipeline():
-    context = ''
-    for agent_name, task in PIPELINE:
-        agent = AGENTS[agent_name]
-        full_task = f'{task}\n\nContext:\n{context}' if context else task
-        context = await agent.run(full_task)
-        print(f'\n--- {agent_name} Result ---\n{context}\n')
 
-async def parallel_fan_out():
-    """Example: run N agents simultaneously."""
-    tasks = [
-        RESEARCHER.run('What is RAG (Retrieval-Augmented Generation)?'),
-        CODER.run('Write a SHA-256 hash function in Python.'),
-        REVIEWER.run('List the pros and cons of microservices architecture.'),
-    ]
-    results = await asyncio.gather(*tasks)
-    for r in results:
-        print('\n=====\n', r)
+def load_task() -> str:
+    task = os.getenv('TASK')
+    if task and task.strip():
+        return task.strip()
 
-async def main():
+    p = Path(os.getenv('TASK_FILE', 'data/task.txt'))
+    if p.exists():
+        text = p.read_text(encoding='utf-8').strip()
+        if text:
+            return text
+
+    return DEFAULT_TASK
+
+
+def save_result(text: str) -> None:
+    out = Path(os.getenv('RESULT_FILE', 'data/result.md'))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding='utf-8')
+    print(f'\n💾 Результат сохранён: {out.resolve()}')
+
+
+async def pipeline(task: str) -> str:
     print('=== PIPELINE ===')
-    await pipeline()
-    print('\n=== PARALLEL ===')
-    await parallel_fan_out()
+    print(f'Модель: {OLLAMA_MODEL}')
+    print(f'Задача: {task}\n')
 
-if __name__ == "__main__":
+    research = await RESEARCHER.run(task)
+    print('\n--- RESEARCHER OUTPUT ---\n' + research)
+
+    code = await CODER.run(f'Задача: {task}\n\nИсследование:\n{research}')
+    print('\n--- CODER OUTPUT ---\n' + code)
+
+    review = await REVIEWER.run(
+        f'Задача: {task}\n\nИсследование:\n{research}\n\nРешение:\n{code}'
+    )
+    print('\n--- REVIEWER OUTPUT ---\n' + review)
+
+    return (
+        f'# Задача\n{task}\n\n'
+        f'## Исследование\n{research}\n\n'
+        f'## Решение\n{code}\n\n'
+        f'## Ревью\n{review}\n'
+    )
+
+
+async def main() -> None:
+    task = load_task()
+    result = await pipeline(task)
+    save_result(result)
+
+
+if __name__ == '__main__':
     asyncio.run(main())
