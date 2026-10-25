@@ -1,0 +1,8 @@
+Steps:
+- run Docker
+- docker compose up --build
+- docker compose up farm
+- change model:
+$env:OLLAMA_MODEL = 'llama3.2:3b'
+python -m app.main
+- 
