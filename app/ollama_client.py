@@ -1,8 +1,7 @@
 import httpx
 from pydantic import BaseModel
 
-# OLLAMA_URL = "http://ollama:11434"  # Service name from docker-compose
-OLLAMA_URL = 'http://127.0.0.1:11434'
+OLLAMA_URL = "http://ollama:11434"
 
 class Message(BaseModel):
     role: str
