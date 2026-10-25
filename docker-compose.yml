@@ -1,35 +1,58 @@
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: ollama_server
     ports:
-      - '11434:11434'
+      - "11434:11434"
     volumes:
-      - 'D:/ollama_models:/root/.ollama'
-    # GPU: раскомментируйте при наличии NVIDIA
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+      - ./ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    healthcheck:
+      test: ["CMD-SHELL", "OLLAMA_HOST=http://0.0.0.0:11434 ollama list || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
 
   ollama-pull:
     image: ollama/ollama:latest
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     environment:
-      - 'OLLAMA_HOST=http://ollama:11434'
-    entrypoint: sh -c 'sleep 5 && ollama pull qwen2.5-coder:3b'
-    restart: 'no'
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        echo "✅ Ollama server is ready. Pulling models..."
+        ollama pull llama3.2:3b
+        ollama pull qwen2.5-coder:3b
+        ollama pull mistral:7b
+        echo "✅ All models pulled successfully!"
+    restart: "no"
 
   farm:
     build: .
-    environment:
-      - 'OLLAMA_URL=http://ollama:11434'
-      - 'OLLAMA_MODEL=qwen2.5-coder:3b'
-    volumes:
-      - './data:/app/data'
     depends_on:
-      - ollama
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "3000:8080"                        # ← Open UI on http://localhost:3000
+    volumes:
+      - ./open-webui-data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_AUTH=true
+      - WEBUI_SECRET_KEY=change-me-in-production
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
