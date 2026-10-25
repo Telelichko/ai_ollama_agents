@@ -4,34 +4,39 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
-#    deploy:
-#      resources:
-#        reservations:
-#          devices:
-#            - driver: nvidia
-#              count: all
-#              capabilities: [gpu]   # Remove this block if you don't have a GPU — it will run on CPU
+      - ./ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    healthcheck:
+      test: ["CMD-SHELL", "OLLAMA_HOST=http://0.0.0.0:11434 ollama list || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
 
-  # Service to pull models on first startup
   ollama-pull:
     image: ollama/ollama:latest
-    depends_on: [ollama]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
     entrypoint: /bin/sh
     command:
       - -c
       - |
-        sleep 10
+        set -e
+        echo "✅ Ollama server is ready. Pulling models..."
         ollama pull llama3.2:3b
         ollama pull qwen2.5-coder:3b
         ollama pull mistral:7b
+        echo "✅ All models pulled successfully!"
     restart: "no"
 
   farm:
     build: .
-    depends_on: [ollama]
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully  # ← CRITICAL: Wait for downloads to finish
     environment:
       - OLLAMA_URL=http://ollama:11434
-
-volumes:
-  ollama_data:
