@@ -1,0 +1,37 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: [gpu]   # Remove this block if you don't have a GPU — it will run on CPU
+
+  # Service to pull models on first startup
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on: [ollama]
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        sleep 10
+        ollama pull llama3.2:3b
+        ollama pull qwen2.5-coder:3b
+        ollama pull mistral:7b
+    restart: "no"
+
+  farm:
+    build: .
+    depends_on: [ollama]
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+
+volumes:
+  ollama_data:
