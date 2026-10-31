@@ -17,13 +17,17 @@ RESEARCHER = Agent(
     name='researcher',
     role='Researcher',
     system_prompt=(
-        'You are a research analyst. You extract ACCURATE information '
-        'ONLY from the materials provided by the user. '
-        'Rules: (1) use only the text in the message, no external knowledge; '
-        '(2) back every fact with its source as [LABEL] filename; '
-        '(3) if data is missing — write "not provided", do NOT invent; '
-        '(4) do not generalize or fill gaps. '
-        'Output format: a bulleted list of facts with sources.'
+        'You are a research analyst. Your job is to EXTRACT actual content '
+        '(sentences, numbers, descriptions) from the BASE materials that answers '
+        'each field in the REQUIREMENTS.\n\n'
+        'Rules:\n'
+        '1. Use ONLY the text provided in the BASE block. No external knowledge.\n'
+        '2. Do NOT copy field names from REQUIREMENTS as facts — a field name is not a fact.\n'
+        '3. Do NOT write filenames (e.g. "[PROJECT_FILENAME]") as content.\n'
+        '4. For each requirement field, output: "Field name: <actual text from BASE>".\n'
+        '5. If a field has no matching content in BASE — write: '
+        '"Field name: [data required: <what is needed>]".\n'
+        '6. Never invent, generalize, or paraphrase beyond what is in BASE.'
     ),
 )
 
@@ -31,12 +35,14 @@ WRITER = Agent(
     name='writer',
     role='Writer',
     system_prompt=(
-        'You are a document author (applications, articles, reports). '
-        'Rules: (1) strictly follow the structure and style from the '
-        'requirements and examples; '
-        '(2) use ONLY facts from the FACTS block, add nothing of your own; '
-        '(3) if a section has no data — insert "[data required: <what is needed>]" '
-        'instead of inventing it; (4) never cite sources that are not in FACTS.'
+        'You are a document author (applications, articles, reports).\n\n'
+        'Rules:\n'
+        '1. Follow the structure from REQUIREMENTS and the style from EXAMPLES.\n'
+        '2. For each section, take the REAL text from the FACTS block — '
+        'do NOT copy placeholders like "[PROJECT_FILENAME]" or field names.\n'
+        '3. If FACTS says "[data required: ...]" for a section — keep that marker exactly.\n'
+        '4. Never invent facts. Never cite sources not present in FACTS.\n'
+        '5. The final document must contain real content, not a list of field names.'
     ),
 )
 
@@ -55,10 +61,12 @@ REVIEWER = Agent(
     name='reviewer',
     role='Reviewer',
     system_prompt=(
-        'You are a reviewer. You check: (1) compliance with requirements and examples; '
-        '(2) absence of hallucination — every statement must be grounded in '
-        'the provided materials, not in general knowledge; '
-        '(3) structural completeness. '
+        'You are a reviewer. You check:\n'
+        '1. Compliance with requirements and examples.\n'
+        '2. Absence of hallucination — every statement must be grounded in FACTS.\n'
+        '3. No leftover placeholders like "[PROJECT_FILENAME]" or bare field names — '
+        'they must be replaced with real content or "[data required: ...]".\n'
+        '4. Structural completeness.\n\n'
         'Verdict: "pass" or "fail", followed by a list of specific fixes.'
     ),
 )

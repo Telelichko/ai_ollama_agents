@@ -10,35 +10,64 @@ CONFIG_PATH = Path(os.getenv('PIPELINE_CONFIG', 'config/pipeline.json'))
 NOT_PROVIDED = '(not provided)'
 
 
-def read_safe(p: Path) -> str:
-    """Reads a file as UTF-8 text; returns empty string on decode/IO error."""
+# ---------- file readers ----------
+
+def read_text_safe(p: Path) -> str:
+    """Reads a text file as UTF-8; returns empty string on error."""
     try:
         return p.read_text(encoding='utf-8').strip()
     except (UnicodeDecodeError, OSError):
         return ''
 
 
+def read_pdf(p: Path) -> str:
+    """Extracts text from a PDF using pypdf. Returns '' on failure."""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(p))
+        if reader.is_encrypted:
+            return ''
+        pages = []
+        for i, page in enumerate(reader.pages, 1):
+            text = (page.extract_text() or '').strip()
+            if text:
+                pages.append(f'--- page {i} ---\n{text}')
+        return '\n\n'.join(pages)
+    except Exception:
+        return ''
+
+
+def read_file(p: Path) -> str:
+    """Dispatches to the right reader based on file extension."""
+    ext = p.suffix.lower()
+    if ext == '.pdf':
+        return read_pdf(p)
+    if ext in {'.txt', '.md', '.rst', '.json', '.yaml', '.yml', '.csv', '.xml'}:
+        return read_text_safe(p)
+    return ''
+
+
 def read_folder(dir_path: Path, label: str) -> str:
-    """Reads all files from a folder, tagging each with its source label [LABEL]."""
+    """Reads all files from a folder, tagging each with [LABEL] filename."""
     if not dir_path.is_dir():
         return ''
     chunks = []
     for f in sorted(dir_path.iterdir()):
         if not f.is_file():
             continue
-        text = read_safe(f)
+        text = read_file(f)
         if text:
             chunks.append(f'### [{label}] {f.name}\n{text}')
     return '\n\n'.join(chunks)
 
 
 def read_task_file(base: Path) -> str:
-    """Reads the task description from base/task.txt."""
-    return read_safe(base / 'task.txt')
+    return read_text_safe(base / 'task.txt')
 
+
+# ---------- context builders ----------
 
 def build_research_context(task: dict) -> dict[str, str]:
-    """Collects task, requirements, examples, and base materials for a research task."""
     base = Path(task['base_path'])
     folders = task.get('folders', {})
     return {
@@ -56,64 +85,67 @@ def build_research_context(task: dict) -> dict[str, str]:
 
 
 def build_development_context(task: dict) -> str:
-    """Collects task description and files for a development task."""
     base = Path(task['base_path'])
     chunks = []
-
     task_text = read_task_file(base)
     if task_text:
         chunks.append(f'### [TASK] task.txt\n{task_text}')
-
     files = read_folder(base, 'FILES')
     if files:
         chunks.append(files)
-
     if not chunks:
         raise ValueError(f'No files in {base.resolve()}')
     return '\n\n'.join(chunks)
 
 
+# ---------- pipelines ----------
+
 async def run_research_pipeline(ctx: dict[str, str]) -> str:
-    """Runs the research pipeline: extract facts -> compose document -> review."""
     task_text = ctx['task'] or '(task not specified in task.txt)'
     req = ctx['requirements'] or NOT_PROVIDED
     ex = ctx['examples'] or NOT_PROVIDED
     base = ctx['base'] or NOT_PROVIDED
 
-    # Step 1: extract facts strictly from the provided materials
+    # Step 1: extract facts strictly from BASE materials
     facts = await RESEARCHER.run(
         f'TASK:\n{task_text}\n\n'
-        f'REQUIREMENTS:\n{req}\n\n'
+        f'REQUIREMENTS (structure only — do NOT copy field names as facts):\n{req}\n\n'
         f'EXAMPLES:\n{ex}\n\n'
-        f'BASE:\n{base}\n\n'
-        f'Extract from these materials only the facts, data, wording, '
-        f'structures, and templates needed to complete the task. '
-        f'Tag every fact with its source as [LABEL] filename. '
-        f'If something is missing — write "not provided". Do not invent.'
+        f'BASE (the ONLY source of facts):\n{base}\n\n'
+        f'Extract from BASE only the actual content (sentences, numbers, descriptions) '
+        f'that answers each requirement field. '
+        f'For each requirement field, output one bullet: "Field name: <actual content from BASE>". '
+        f'If a field has no matching content in BASE — write "Field name: [data required: <what is needed>]". '
+        f'Do NOT copy field names from REQUIREMENTS as facts. '
+        f'Do NOT invent anything. Do NOT write filenames as content.'
     )
     print(f'\n--- RESEARCHER FACTS ---\n{facts}')
 
-    # Step 2: compose the document strictly from requirements and facts
+    # Step 2: compose the document strictly from facts
     document = await WRITER.run(
         f'TASK:\n{task_text}\n\n'
-        f'REQUIREMENTS:\n{req}\n\n'
-        f'EXAMPLES:\n{ex}\n\n'
-        f'BASE / STYLE:\n{base}\n\n'
-        f'FACTS (the only permitted source):\n{facts}\n\n'
-        f'Compose the document per the task and requirements, following the '
-        f'structure and style from the examples and base. Use only facts from '
-        f'the FACTS block. Where data is missing — insert [data required: <what is needed>].'
+        f'REQUIREMENTS (follow this structure):\n{req}\n\n'
+        f'EXAMPLES (follow this style):\n{ex}\n\n'
+        f'FACTS (the ONLY permitted source of content):\n{facts}\n\n'
+        f'Compose the document per the task and requirements. '
+        f'For each section, take the real text from FACTS — do NOT copy placeholders '
+        f'like "[PROJECT_FILENAME]" or field names. '
+        f'If FACTS says "[data required: ...]" for a section — keep that marker exactly. '
+        f'Never invent facts. Never cite sources not present in FACTS.'
     )
     print(f'\n--- WRITER DOCUMENT ---\n{document}')
 
-    # Step 3: review for hallucination and compliance
+    # Step 3: review
     review = await REVIEWER.run(
         f'TASK:\n{task_text}\n\n'
         f'REQUIREMENTS:\n{req}\n\n'
+        f'FACTS:\n{facts}\n\n'
         f'DOCUMENT:\n{document}\n\n'
         f'Check: (1) compliance with requirements and examples; '
-        f'(2) absence of hallucination — every statement must be grounded '
-        f'in the provided materials; (3) structural completeness. '
+        f'(2) absence of hallucination — every statement must be grounded in FACTS; '
+        f'(3) no placeholders like "[PROJECT_FILENAME]" left in the document — '
+        f'they must be replaced with real content or "[data required: ...]"; '
+        f'(4) structural completeness. '
         f'Verdict: "pass" / "fail", then a list of fixes.'
     )
     print(f'\n--- REVIEWER ---\n{review}')
@@ -128,7 +160,6 @@ async def run_research_pipeline(ctx: dict[str, str]) -> str:
 
 
 async def run_development_pipeline(context: str) -> str:
-    """Runs the development pipeline: analyze -> write code -> review."""
     analysis = await RESEARCHER.run(
         f'Task and materials:\n{context}\n\n'
         f'Extract requirements, constraints, and inputs. '
@@ -155,7 +186,6 @@ async def run_development_pipeline(context: str) -> str:
 
 
 async def main():
-    """Loads config, runs all tasks, and writes each result to its output file."""
     config = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
     model = config.get('settings', {}).get('model', OLLAMA_MODEL)
     temperature = config.get('settings', {}).get('temperature', 0.2)
