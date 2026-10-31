@@ -40,12 +40,15 @@ services:
         condition: service_completed_successfully
     environment:
       - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
     ports:
-      - "3000:8080"                        # ← Open UI on http://localhost:3000
+      - "3000:8080"
     volumes:
       - ./open-webui-data:/app/backend/data
     environment:

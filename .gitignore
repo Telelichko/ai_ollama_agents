@@ -222,4 +222,5 @@ __marimo__/
 .idea/
 ollama_data/
 open-webui-data/
+data/
 

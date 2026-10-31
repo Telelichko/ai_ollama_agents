@@ -1,0 +1,36 @@
+{
+  "settings": {
+    "model": "llama3.2:3b",
+    "temperature": 0.7
+  },
+  "tasks": [
+    {
+      "name": "research_1",
+      "task_type": "research",
+      "base_path": "data/research_task_1",
+      "folders": {
+        "requirements": "requirements",
+        "examples": "examples",
+        "base": "base"
+      },
+      "output_file": "data/results/research_1_result.md"
+    },
+    {
+      "name": "dev_1",
+      "task_type": "development",
+      "base_path": "data/dev_task_1",
+      "output_file": "data/results/dev_1_result.md"
+    },
+    {
+      "name": "research_2",
+      "task_type": "research",
+      "base_path": "data/research_task_2",
+      "folders": {
+        "requirements": "requirements",
+        "examples": "examples",
+        "base": "base"
+      },
+      "output_file": "data/results/research_2_result.md"
+    }
+  ]
+}
